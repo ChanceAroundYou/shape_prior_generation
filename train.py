@@ -1,13 +1,15 @@
-import h5py
 import numpy as np
 import torch
 from torch import optim
 from torch.utils.data import DataLoader, TensorDataset
 
 from models.ResVAE import ResVariationalAutoEncoder
+from utils.load import load_cw
+
+# from utils.get_kl_rate import get_kl_rate
 
 # Configuration
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 MAT_PATH = "data/preprocessed.theta.mat"
 MODEL_SAVE_PATH = "checkpoints/ResVAE.pth"
 SEED = 717
@@ -23,50 +25,15 @@ LR_RATE = 1e-4
 KL_RATE = 0.1
 
 torch.manual_seed(SEED)
-
-
-def load_cw(mat_path):
-    with h5py.File(mat_path, "r") as mat_file:
-        # Access the 'bc_dict' group
-        bc_dict_group = mat_file["bc_dict"]
-        # Initialize a 3D NumPy array to store theta
-        conformalWeldings = np.empty(
-            (len(bc_dict_group), 100), dtype=np.float32
-        )  # Use float32 instead of complex128
-
-        # Iterate over the fields (e.g., 'Case00_12', 'Case00_13', etc.)
-        for i, field_name in enumerate(bc_dict_group):
-            case_group = bc_dict_group[field_name]
-            # xq = case_group['x'][:]  # Load the 'x' dataset into a structured array
-            # yq = case_group['y'][:]  # Load the 'y' dataset into a structured array
-            theta = case_group["theta"][
-                :
-            ]  # Load the 'theta' dataset into a structured array
-            theta = np.insert(theta, 100, 2 * np.pi)
-            theta = np.diff(theta)  # Use diff between theta to train
-            # theta_ma = case_group['theta_ma'][:]  # Load the 'theta_ma' dataset into a structured array
-            # theta_ma = np.insert(theta_ma, 0, 0)
-            # theta_ma = np.diff(theta_ma)
-            # bias = case_group['bias'][:]  # Load the 'bias' dataset into a structured array
-            conformalWeldings[i] = np.log(
-                1 / theta
-            )  # Correspond theta and bias together
-    return conformalWeldings
-
-
-def get_kl_rate(epoch, n=500, m=1000):
-    if epoch < m:
-        return 0
-    else:
-        return (epoch % n) / n
+np.random.seed(SEED)
 
 
 def train(is_load=False):
-    cw = load_cw(MAT_PATH)
-    cw_tensor = torch.tensor(cw).to(DEVICE)
+    cw = load_cw(MAT_PATH, ["Case00"])
+    cw_tensor = torch.tensor(cw)
 
     train_data = TensorDataset(cw_tensor)
-    train_loader = DataLoader(dataset=train_data, batch_size=BATCH_SIZE, shuffle=True)
+    train_loader = DataLoader(dataset=train_data, batch_size=BATCH_SIZE, shuffle=True, pin_memory=True)
 
     model = ResVariationalAutoEncoder(
         input_dim=INPUT_DIM, h_dim=H_DIM, h_layers=H_LAYERS, z_dim=Z_DIM
@@ -118,3 +85,7 @@ def train(is_load=False):
 
         if epoch % 1000 == 0:
             torch.save(model, MODEL_SAVE_PATH)
+
+
+if __name__ == "__main__":
+    train(is_load=False)
