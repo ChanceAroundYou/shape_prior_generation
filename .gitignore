@@ -12,3 +12,4 @@ hbs.zip
 .ipynb_checkpoints
 data/MNIST
 test*.py
+data/img
