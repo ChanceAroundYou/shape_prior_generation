@@ -3,7 +3,7 @@ import torch
 from torch import optim
 from torch.utils.data import DataLoader, TensorDataset
 
-from models.ResVAE import ResVariationalAutoEncoder
+from models.ResVAE import ResVAE
 from utils.load import load_cw
 
 # from utils.get_kl_rate import get_kl_rate
@@ -33,10 +33,12 @@ def train(is_load=False):
     cw_tensor = torch.tensor(cw)
 
     train_data = TensorDataset(cw_tensor)
-    train_loader = DataLoader(dataset=train_data, batch_size=BATCH_SIZE, shuffle=True, pin_memory=True)
+    train_loader = DataLoader(
+        dataset=train_data, batch_size=BATCH_SIZE, shuffle=True, pin_memory=True
+    )
 
-    model = ResVariationalAutoEncoder(
-        input_dim=INPUT_DIM, h_dim=H_DIM, h_layers=H_LAYERS, z_dim=Z_DIM
+    model = ResVAE(
+        input_dim=INPUT_DIM, hidden_dim=H_DIM, hidden_layers=H_LAYERS, latent_dim=Z_DIM
     ).to(DEVICE)
 
     ## Load model

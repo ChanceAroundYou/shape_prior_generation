@@ -1,6 +1,8 @@
 import torch
 from torch import nn
 
+from models.base_VAE import BaseVAE
+
 
 class ResLinearBlock(nn.Module):
     def __init__(self, in_features, out_features, hidden_features, repeat=0, bias=True):
@@ -28,128 +30,81 @@ class ResLinearBlock(nn.Module):
             # nn.BatchNorm1d(out_features)
             nn.LayerNorm(out_features),
         )
-
-        self.in_features = in_features
-        self.out_features = out_features
-        self.hidden_features = hidden_features
+        if in_features != out_features:
+            self.shortcut = nn.Linear(in_features, out_features, bias=bias)
+        else:
+            self.shortcut = nn.Identity()
 
     def forward(self, x):
         x1 = self.input_layer(x)
         x1 = self.hidden_layers(x1)
         x1 = self.output_layer(x1)
-        if self.in_features != self.out_features:
-            x = x[:, : self.out_features]
-        return x1 + x
 
-
-class ResVariationalAutoEncoder(nn.Module):
-    def __init__(self, input_dim, h_dim=200, h_layers=[2, 2], z_dim=2):
-        super().__init__()
-        # encoder
-        self.img2hid = nn.Sequential(
-            nn.Linear(input_dim, h_dim),
-            nn.ReLU(),
-            # nn.BatchNorm1d(h_dim)
-            # nn.LayerNorm(h_dim)
-        )
-        self.encoder_layers = nn.Sequential(
-            *[ResLinearBlock(h_dim, h_dim, h_dim, repeat=repeat) for repeat in h_layers]
-        )
-        self.hid2mu = nn.Linear(h_dim, z_dim)
-        self.hid2log_var = nn.Linear(h_dim, z_dim)
-
-        # decoder
-        self.z2hid = nn.Sequential(
-            nn.Linear(z_dim, h_dim),
-            nn.ReLU(),
-            # nn.BatchNorm1d(h_dim)
-            # nn.LayerNorm(h_dim)
-        )
-        self.decoder_layers = nn.Sequential(
-            *[ResLinearBlock(h_dim, h_dim, h_dim, repeat=repeat) for repeat in h_layers]
-        )
-        self.hid2img = nn.Sequential(
-            nn.Linear(h_dim, input_dim),
-            # nn.ReLU(),
-            # nn.BatchNorm1d(input_dim)
-            # nn.LayerNorm(input_dim)
-        )
-
-        # Define the learnable alpha parameter
-        self.mean = nn.Parameter(torch.tensor(3.168751), requires_grad=True)
-        self.std = nn.Parameter(torch.tensor(1.014383), requires_grad=True)
-
-    def encode(self, x):
-        x = self.img2hid(x)
-        x = self.encoder_layers(x)
-        mu = self.hid2mu(x)
-        log_var = self.hid2log_var(x)
-        return mu, log_var
-
-    def decode(self, z, eps=1e-8):
-        x = self.z2hid(z)
-        x = self.decoder_layers(x)
-        x = self.hid2img(x)
-        # h = (h - h.mean()) / h.std()
-        # h = h * self.std + self.mean
+        x = self.shortcut(x)
+        x = torch.relu(x + x1)
         return x
+
+
+class ResVAEEncoder(nn.Module):
+    def __init__(self, input_dim, output_dim=2, hidden_dim=200, hidden_layers=[2, 2]):
+        super().__init__()
+        self.encoder_layers = nn.Sequential(
+            *[
+                (
+                    ResLinearBlock(hidden_dim, hidden_dim, hidden_dim, repeat=layer_num)
+                    if i > 0
+                    else ResLinearBlock(
+                        input_dim, hidden_dim, hidden_dim, repeat=layer_num
+                    )
+                )
+                for i, layer_num in enumerate(hidden_layers)
+            ]
+        )
+        self.fc_mu = nn.Linear(hidden_dim, output_dim)
+        self.fc_logvar = nn.Linear(hidden_dim, output_dim)
 
     def forward(self, x):
-        mu, log_var = self.encode(x)
-        z = self.sample(mu, log_var)
-        x = self.decode(z)
-        return x, mu, log_var
+        x = self.encoder_layers(x)
+        mu = self.fc_mu(x)
+        log_var = self.fc_logvar(x)
+        return mu, log_var
 
-    def sample(self, mu, log_var):
-        sigma = log_var.exp().sqrt()
-        epsilon = torch.randn_like(sigma)
-        z = mu + sigma * epsilon
-        return z
 
-    def generate(self, z):
-        x = self.decode(z)
+class ResVAEDecoder(nn.Module):
+    def __init__(
+        self, input_dim=2, output_dim=100, hidden_dim=200, hidden_layers=[2, 2]
+    ):
+        super().__init__()
+        self.decoder_layers = nn.Sequential(
+            *[
+                (
+                    ResLinearBlock(hidden_dim, hidden_dim, hidden_dim, repeat=layer_num)
+                    if i > 0
+                    else ResLinearBlock(
+                        input_dim, hidden_dim, hidden_dim, repeat=layer_num
+                    )
+                )
+                for i, layer_num in enumerate(hidden_layers)
+            ]
+        )
+        self.fc_output = nn.Linear(hidden_dim, output_dim)
+
+    def forward(self, x):
+        x = self.decoder_layers(x)
+        x = self.fc_output(x)
         return x
 
-    def reconstruct(self, h, eps=1e-8):
-        h = 1 / (torch.exp(h) + eps)
-        h = h / torch.sum(h, dim=1, keepdim=True) * 2 * torch.pi
-        h = h.cumsum(dim=1)
-        return h
 
-    def loss(self, x, x_reconstructed, mu, log_var, kl_rate=0.1, true_rate=0.1):
-        # Reconstruction loss
-        # recon_loss = F.binary_cross_entropy(x_reconstructed, x, reduction='sum')
-        recon_loss = (x_reconstructed - x).pow(2).sum(dim=1).mean()
-        true_loss = (
-            (self.reconstruct(x) - self.reconstruct(x_reconstructed))
-            .pow(2)
-            .sum(dim=1)
-            .mean()
-        )
-
-        # KL divergence loss
-        kl_loss = mu.pow(2) + log_var.exp() - log_var - 1
-        kl_loss = 0.5 * torch.sum(kl_loss, dim=1).mean()
-        loss = recon_loss + true_rate * true_loss + kl_rate * kl_loss
-        return {
-            "loss": loss,
-            "recon_loss": recon_loss,
-            "kl_loss": kl_loss,
-            "true_loss": true_loss,
-        }
-
-    def initial(self):
-        for m in self.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.xavier_normal_(m.weight)
-                try:
-                    nn.init.constant_(m.bias, 0)
-                except:
-                    pass
+class ResVAE(BaseVAE):
+    def __init__(self, input_dim, hidden_dim=200, hidden_layers=[2, 2], latent_dim=2, device="cpu"):
+        super().__init__(input_dim, latent_dim, device)
+        self.encoder = ResVAEEncoder(input_dim, latent_dim, hidden_dim, hidden_layers)
+        self.decoder = ResVAEDecoder(latent_dim, input_dim, hidden_dim, hidden_layers)
+        self.to(device)
 
 
 if __name__ == "__main__":
     from torchsummary import summary
 
-    model = ResVariationalAutoEncoder(100, h_dim=1000, h_layers=[1], z_dim=2)
+    model = ResVAE(100, hidden_dim=1000, hidden_layers=[1], latent_dim=2)
     summary(model, (100,), device="cpu")

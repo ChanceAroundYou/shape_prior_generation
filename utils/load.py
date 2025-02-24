@@ -1,11 +1,12 @@
-from typing import List
-
 import os
+import pickle
+from typing import Dict, List, Tuple
+
 import h5py
-from hbs.conformal_welding import ConformalWelding
 import numpy as np
 from hbs import get_hbs
 from hbs.boundary import get_boundary
+from hbs.conformal_welding import ConformalWelding
 
 # from hbs.conformal_welding import ConformalWelding
 
@@ -32,28 +33,46 @@ def load_from_img(img_path: str, bound_point_num=500, cw_point_num=100):
     bound = get_boundary(img_path, bound_point_num)
     hbs, he, cw, disk = get_hbs(bound, 1000, 0.01)
     cw.linear_interp(cw_point_num)
-    return cw, bound
+    return cw
 
-def load_from_dir(img_dir: str, bound_point_num=500, cw_point_num=100, exclude_list=[]):
-    data = dict()
-    for img_name in os.listdir(img_dir):
-        if not img_name.endswith('.png') and not img_name.endswith('.jpg'):
-            continue
 
-        if img_name in exclude_list:
-            continue
+def load_from_dir(
+    img_dir: str, bound_point_num=500, cw_point_num=100, exclude_list=[], read_from_file=True
+) -> Tuple[np.ndarray, Dict[str, ConformalWelding]]:
+    cw_dict_path = os.path.join(img_dir, "cw_dict.pkl")
+    if read_from_file and os.path.exists(cw_dict_path):
+        cw_dict: Dict[str, ConformalWelding] = pickle.load(open(cw_dict_path, "rb"))
+        print(f"Read from saved cw_dict file {cw_dict_path}")
 
-        print(img_name)
-        img_path = os.path.join(img_dir, img_name)
-        data[img_name] = load_from_img(img_path, bound_point_num, cw_point_num)
-    
-    result = np.stack([preprocess(cw) for _, (cw, _) in data.items()])
-    return result, data
+        for _, cw in cw_dict.items():
+            if len(cw.y) != cw_point_num:
+                cw.linear_interp(cw_point_num)
+    else:
+        cw_dict: Dict[str, ConformalWelding] = dict()
+        for img_name in os.listdir(img_dir):
+            if not img_name.endswith(".png") and not img_name.endswith(".jpg"):
+                continue
+
+            if img_name in exclude_list:
+                continue
+
+            print(f"Loading {img_name}")
+            img_path = os.path.join(img_dir, img_name)
+            cw_dict[img_name] = load_from_img(img_path, bound_point_num, cw_point_num)
+        
+        with open(cw_dict_path, "wb") as f:
+            pickle.dump(cw_dict, f)
+            print(f"Save cw_dict to file {cw_dict_path}")
+
+    result = np.stack([preprocess(cw) for _, cw in cw_dict.items()])
+    return result, cw_dict
+
 
 def preprocess(cw: ConformalWelding) -> np.ndarray:
     theta = cw.get_y_angle_diff()
     theta = np.log(1 / theta)
     return theta
+
 
 def loading_preprocess(theta: np.ndarray) -> np.ndarray:
     theta = np.insert(theta, 100, 2 * np.pi)
