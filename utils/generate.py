@@ -1,6 +1,8 @@
-import torch
 import numpy as np
+import torch
+
 from utils.geodesicwelding import geodesicwelding
+
 
 def generate_data(model, num=1, mu_vals=None, logvar_vals=None, k=1):
     if mu_vals is None:
@@ -33,8 +35,8 @@ def generate_data(model, num=1, mu_vals=None, logvar_vals=None, k=1):
 
     model.eval()
     with torch.no_grad():
-        mu = mu.to(model.device, dtype=torch.float)
-        logvar = logvar.to(model.device, dtype=torch.float)
+        mu = mu.to(model.device, dtype=torch.float64)
+        logvar = logvar.to(model.device, dtype=torch.float64)
         z = model.reparameterize(mu, logvar, k)
         generated_data = model.decode(z)
 

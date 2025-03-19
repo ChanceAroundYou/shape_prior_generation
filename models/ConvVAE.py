@@ -1,5 +1,5 @@
 import torch
-import torch.nn.functional as F
+# import torch.nn.functional as F
 from torch import nn
 import math
 
@@ -169,7 +169,7 @@ class ResConvVAE(nn.Module):
         x = x * self.std + self.mean
         return x
     
-    def reconstruct(self, h, eps=1e-8):
+    def reconstruct(self, h, eps=1e-10):
         h = 1 / (torch.exp(h)+eps)
         h = h / torch.sum(h, dim=1, keepdim=True) * 2 * torch.pi
         return h

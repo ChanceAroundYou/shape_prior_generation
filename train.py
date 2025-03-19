@@ -60,7 +60,7 @@ def train(is_load=False):
 
     for epoch in range(NUM_EPOCHS):
         for i, [data] in enumerate(train_loader):
-            data = data.to(DEVICE, dtype=torch.float32).view(data.shape[0], INPUT_DIM)
+            data = data.to(DEVICE, dtype=torch.float64).view(data.shape[0], INPUT_DIM)
             x_reconstructed, mu, log_var = model(data)
 
             # Compute loss
