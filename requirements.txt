@@ -253,7 +253,7 @@ filelock==3.16.1
 fonttools==4.55.2
 fsspec==2024.10.0
 h5py==3.12.1
-hbs==0.4.1
+hbs==0.4.2
 ipykernel==6.29.5
 ipython==8.30.0
 jedi==0.19.2
