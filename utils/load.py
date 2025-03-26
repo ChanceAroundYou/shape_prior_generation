@@ -30,7 +30,7 @@ from hbs.conformal_welding import ConformalWelding
 
 
 def load_from_img(img_path: str, bound_point_num=500, cw_point_num=100, kernel_size=15) -> ConformalWelding:
-    bound = get_boundary(img_path, bound_point_num, kernel_size)
+    bound = get_boundary(img_path, bound_point_num) #, kernel_size)
     hbs, he, cw, disk = get_hbs(bound, 1000, 0.01)
     cw.linear_interp(cw_point_num)
     return cw
