@@ -30,7 +30,7 @@ class BaseVAE(nn.Module):
         x = self.decode(z)
         return x, mu, log_var
 
-    def reconstruct(self, h, eps=1e-8):
+    def reconstruct(self, h, eps=1e-7):
         h = 1 / (torch.exp(h) + eps)
         h = h / torch.sum(h, dim=1, keepdim=True) * 2 * torch.pi
         h[h < eps] = eps
