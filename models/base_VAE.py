@@ -38,12 +38,12 @@ class BaseVAE(nn.Module):
         h = h.cumsum(dim=1)
         return h
 
-    def loss(self, x, x_reconstructed, mu, log_var, kl_rate=0.5, true_rate=1):
+    def loss(self, x, groud_truth, mu, log_var, kl_rate=0.5, true_rate=1):
         # Reconstruction loss
         # recon_loss = F.binary_cross_entropy(x_reconstructed, x, reduction='sum')
-        recon_loss = (x_reconstructed - x).pow(2).sum(dim=1).mean()
+        recon_loss = (groud_truth - x).pow(2).sum(dim=1).mean()
         true_loss = (
-            (self.reconstruct(x) - self.reconstruct(x_reconstructed))
+            (self.reconstruct(x) - self.reconstruct(groud_truth))
             .pow(2)
             .sum(dim=1)
             .mean()
