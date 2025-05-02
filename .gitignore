@@ -13,3 +13,4 @@ hbs.zip
 data/MNIST
 test*.py
 data/img
+runs
