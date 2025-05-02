@@ -83,14 +83,14 @@ def make_grid(images, rows, cols=None, figsize=None, title=None, dpi=100):
 
     return grid
 
-def visualize_latent_space(z_groud_truth, z_generated, annotate=True):
+def visualize_latent_space(z_ground_truth, z_generated, annotate=True):
     z_generated = z_generated.cpu().detach().numpy()
-    z_groud_truth = z_groud_truth.cpu().detach().numpy()
+    z_ground_truth = z_ground_truth.cpu().detach().numpy()
     plt.scatter(z_generated[:, 0], z_generated[:, 1], color='b')
     if annotate:
-        for i, (x, y) in enumerate(z_groud_truth):
+        for i, (x, y) in enumerate(z_ground_truth):
             plt.annotate(str(i), (x, y), xytext=(2, 2), textcoords='offset points')
-    plt.scatter(z_groud_truth[:, 0], z_groud_truth[:, 1], color="r")
+    plt.scatter(z_ground_truth[:, 0], z_ground_truth[:, 1], color="r")
     plt.title("Latent Space Distribution\n(Red: Original, Blue: Generated)")
     plt.show()
 

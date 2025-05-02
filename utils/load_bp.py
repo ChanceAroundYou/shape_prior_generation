@@ -13,7 +13,7 @@ def load_from_img(img_path: str, bound_point_num=100, kernel_size=15) -> np.ndar
         min_vals = np.min(bound, axis=0)
         max_vals = np.max(bound, axis=0)
         size = (max_vals - min_vals).max() + 1e-10
-        bound = (bound - min_vals) / size  # Adding small epsilon to avoid division by zero
+        bound = (bound - min_vals) / size
     return bound
 
 
