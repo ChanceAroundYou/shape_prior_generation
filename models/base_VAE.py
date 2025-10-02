@@ -24,19 +24,11 @@ class BaseVAE(nn.Module):
         z = mu + std * eps
         return z
 
-    def forward(self, x):
+    def forward(self, x, k=1):
         mu, log_var = self.encode(x)
-        z = self.reparameterize(mu, log_var)
+        z = self.reparameterize(mu, log_var, k)
         x = self.decode(z)
         return x, mu, log_var
-
-    def reconstruct(self, h, eps=1e-7):
-        h = 1 / (torch.exp(h) + eps)
-        h = h / torch.sum(h, dim=1, keepdim=True) * 2 * torch.pi
-        h[h < eps] = eps
-        h = h / torch.sum(h, dim=1, keepdim=True) * 2 * torch.pi
-        h = h.cumsum(dim=1)
-        return h
 
     def loss(self, x, groud_truth, mu, log_var, kl_rate=0.5, true_rate=1):
         # Reconstruction loss

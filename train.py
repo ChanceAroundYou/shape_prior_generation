@@ -1,93 +1,196 @@
+import random
+import time
+from copy import deepcopy
+
 import numpy as np
 import torch
 from torch import optim
 from torch.utils.data import DataLoader, TensorDataset
-
-from models.ResVAE import ResVAE
-from utils.load import load_cw
-
-# from utils.get_kl_rate import get_kl_rate
-
-# Configuration
-DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-MAT_PATH = "data/preprocessed.theta.mat"
-MODEL_SAVE_PATH = "checkpoints/ResVAE.pth"
-SEED = 717
-
-INPUT_DIM = 100  # Adjusted input dimension to match your complex data
-H_DIM = 2000
-Z_DIM = 4
-H_LAYERS = [2]
-
-NUM_EPOCHS = 20000
-BATCH_SIZE = 1024  # Adjusted batch size
-LR_RATE = 1e-4
-KL_RATE = 0.1
-
-torch.manual_seed(SEED)
-np.random.seed(SEED)
+from torch.utils.tensorboard import SummaryWriter
 
 
-def train(is_load=False):
-    cw = load_cw(MAT_PATH, ["Case00"])
-    cw_tensor = torch.tensor(cw)
+def setup_seeds(seed):
+    """设置随机种子以确保可重复性"""
+    random.seed(seed)
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
 
-    train_data = TensorDataset(cw_tensor)
+
+def setup_dataloader(input_tensor, batch_size, train_ratio=0.9, dtype=torch.float32):
+    """创建训练和验证数据加载器"""
+    dataset_size = len(input_tensor)
+    train_size = int(dataset_size * train_ratio)
+    
+    indices = np.arange(dataset_size)
+    train_indices = torch.from_numpy(np.random.choice(indices, train_size, replace=False))
+    val_indices = torch.from_numpy(np.setdiff1d(indices, train_indices.numpy()))
+    print(f"train index: {train_indices}")
+    print(f"val index: {val_indices}")
+    
+    train_data = TensorDataset(input_tensor[train_indices].to(dtype))
+    val_data = TensorDataset(input_tensor[val_indices].to(dtype))
+    
     train_loader = DataLoader(
-        dataset=train_data, batch_size=BATCH_SIZE, shuffle=True, pin_memory=True
+        dataset=train_data,
+        batch_size=batch_size,
+        shuffle=True,
+        pin_memory=True
     )
-
-    model = ResVAE(
-        input_dim=INPUT_DIM, hidden_dim=H_DIM, hidden_layers=H_LAYERS, latent_dim=Z_DIM
-    ).to(DEVICE)
-
-    ## Load model
-    if is_load:
-        model = torch.load(MODEL_SAVE_PATH)
-
-    optimizer = optim.Adam(
-        model.parameters(), lr=LR_RATE, weight_decay=1e-5, betas=(0.5, 0.999)
+    
+    val_loader = DataLoader(
+        dataset=val_data,
+        batch_size=batch_size,
+        shuffle=False,
+        pin_memory=True
     )
-    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[8000], gamma=0.5)
+    
+    return train_loader, val_loader
 
-    model.to(DEVICE)
 
+def train_vae(
+    model,
+    input_tensor,
+    input_dim,
+    batch_size,
+    num_epochs,
+    learning_rate,
+    kl_rate,
+    device,
+    tb_path,
+    tb_comment=None,
+    train_ratio=1,
+    seed=717,
+    dtype=torch.float32,
+    model_save_path=None,
+    model_load_path=None,
+    optimizer=None,
+    scheduler=None,
+    skip_train=False,
+    val_interval=10,
+):
+    """通用VAE训练函数"""
+    # 设置随机种子
+    setup_seeds(seed)
+
+    # 准备数据加载器
+    train_loader, val_loader = setup_dataloader(input_tensor, batch_size, train_ratio=train_ratio, dtype=dtype)
+
+    # 初始化模型
+    model = model.to(device).to(dtype)
+    if model_load_path:
+        model.load_state_dict(torch.load(model_load_path, weights_only=True))
+    else:
+        model.initial()
+
+    # 设置优化器
+    if optimizer is None:
+        optimizer = optim.Adam(
+            model.parameters(), lr=learning_rate, weight_decay=1e-5, betas=(0.5, 0.999)
+        )
+        
+    # TensorBoard
+    tb_path = f"{tb_path}{tb_comment or time.strftime('_%Y-%m-%d_%H:%M:%S', time.localtime())}"
+    writer = SummaryWriter(tb_path)
+    model_save_path = model_save_path or f"{tb_path}/model.pth"
+    model.save_path = tb_path
+    # 训练循环变量
     loader_size = len(train_loader)
+    val_loader_size = len(val_loader)
     loss_list_dict = {}
+    best_loss = None
 
-    # Start Training
-    model.train()
+    if not skip_train:
+        # 训练循环
+        for epoch in range(num_epochs):
+            # 训练阶段
+            model.train()
+            for i, [input_data] in enumerate(train_loader):
+                input_data = input_data.to(device, dtype=dtype).view(input_data.shape[0], input_dim)
 
-    for epoch in range(NUM_EPOCHS):
-        for i, [data] in enumerate(train_loader):
-            data = data.to(DEVICE, dtype=torch.float64).view(data.shape[0], INPUT_DIM)
-            x_reconstructed, mu, log_var = model(data)
+                # 前向传播
+                x_reconstructed, mu, logvar = model(input_data)
 
-            # Compute loss
-            # kl_rate = get_kl_rate(epoch)
-            kl_rate = KL_RATE
-            loss_dict = model.loss(x_reconstructed, data, mu, log_var, kl_rate)
+                # 计算损失
+                loss_dict = model.loss(x_reconstructed, input_data, mu, logvar, kl_rate)
 
-            # Backprop
-            optimizer.zero_grad()
-            loss_dict["loss"].backward()
-            optimizer.step()
-            scheduler.step()
+                # 反向传播
+                optimizer.zero_grad()
+                loss_dict["loss"].backward()
+                optimizer.step()
 
-            # Append losses to the lists
-            for k, v in loss_dict.items():
-                if k not in loss_list_dict:
-                    loss_list_dict[k] = np.zeros(loader_size)
-                loss_list_dict[k][i] = v.item()
+                # 更新学习率
+                if scheduler:
+                    scheduler.step()
 
-        if epoch % 100 == 0:
-            print(
-                f"Epoch {epoch}/{NUM_EPOCHS} | {', '.join([f'{k}: {v.mean():.4f}' for k, v in loss_list_dict.items()])}"
-            )
+                # 记录训练损失
+                for k, v in loss_dict.items():
+                    if k not in loss_list_dict:
+                        loss_list_dict[k] = np.zeros(loader_size)
+                    loss_list_dict[k][i] = v.item()
 
-        if epoch % 1000 == 0:
-            torch.save(model, MODEL_SAVE_PATH)
+            # 每10个epoch验证一次
+            if epoch % val_interval == 0 and train_ratio < 1:
+                model.eval()
+                val_loss_list_dict = {}
+                
+                with torch.no_grad():
+                    for j, [input_data] in enumerate(val_loader):
+                        input_data = input_data.to(device, dtype=dtype).view(input_data.shape[0], input_dim)
+                        x_reconstructed, mu, logvar = model(input_data)
+                        val_loss_dict = model.loss(x_reconstructed, input_data, mu, logvar, kl_rate)
+                        
+                        for k, v in val_loss_dict.items():
+                            if k not in val_loss_list_dict:
+                                val_loss_list_dict[k] = np.zeros(val_loader_size)
+                            val_loss_list_dict[k][j] = v.item()
 
+                # 记录训练和验证损失到TensorBoard
+                for k in loss_list_dict.keys():
+                    writer.add_scalars(
+                        k,
+                        {
+                            'train': loss_list_dict[k].mean(),
+                            'val': val_loss_list_dict[k].mean()
+                        },
+                        epoch
+                    )
 
-if __name__ == "__main__":
-    train(is_load=False)
+                print(
+                    f"Val Epoch {epoch}/{num_epochs} | "
+                    + ", ".join([f"{k}: {v.mean():.4f}" for k, v in val_loss_list_dict.items()])
+                )
+            else:
+                for k in loss_list_dict.keys():
+                    writer.add_scalars(
+                        k,
+                        {
+                            'train': loss_list_dict[k].mean()
+                        },
+                        epoch
+                    )
+
+            # 保存最佳模型
+            if best_loss is None or best_loss["loss"].item() > loss_dict["loss"].item():
+                best_loss = loss_dict
+                print(
+                    f"Best epoch {epoch}/{num_epochs} | "
+                    + ", ".join([f"{k}: {v.mean():.4f}" for k, v in loss_list_dict.items()])
+                )
+                best_params = deepcopy(model.state_dict())
+
+            # 定期打印
+            if epoch % 100 == 0:
+                print(
+                    f"Epoch {epoch}/{num_epochs} | "
+                    + ", ".join([f"{k}: {v.mean():.4f}" for k, v in loss_list_dict.items()])
+                )
+
+        # 保存最佳模型
+        model.load_state_dict(best_params)
+        torch.save(best_params, model_save_path)
+        writer.close()
+
+    return model, best_loss

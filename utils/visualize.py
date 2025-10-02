@@ -96,14 +96,15 @@ def visualize_latent_space(z_ground_truth, z_generated, annotate=True):
 
 def visualize_cw_comparison(generated_cw, ground_truth_cw, figsize=(10, 5)):
     fig = plt.figure(figsize=figsize)
-    ax = fig.add_subplot(122)
+    x_vals = np.linspace(0, 2*np.pi, num=500)
+    ax = fig.add_subplot(121)
     ax.title.set_text("Ground Truth Conformal Welding")
     for i in range(len(ground_truth_cw)):
-        ax.plot(ground_truth_cw[i])
+        ax.plot(x_vals, ground_truth_cw[i])
         
-    ax = fig.add_subplot(121)
+    ax = fig.add_subplot(122)
     ax.title.set_text("Generated Conformal Welding")
     for i in range(len(generated_cw)):
-        ax.plot(generated_cw[i])
+        ax.plot(x_vals, generated_cw[i])
 
     

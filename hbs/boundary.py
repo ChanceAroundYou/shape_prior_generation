@@ -36,12 +36,6 @@ def extract_boundary_points(image_path):
     """
     # Read the image and convert to grayscale
     img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-
-    # Add padding to avoid detecting image borders
-    img = cv2.copyMakeBorder(img, 1, 1, 1, 1, cv2.BORDER_CONSTANT, value=255)
-
-    # Determine if the image is black-on-white or white-on-black
-    # Calculate the mean color of the outer two layers of pixels
     outer_layer_mean = np.mean(
         [img[:2, :].mean(), img[-2:, :].mean(), img[:, :2].mean(), img[:, -2:].mean()]
     )
@@ -49,6 +43,17 @@ def extract_boundary_points(image_path):
     if outer_layer_mean > 127:
         # White-on-black image, invert it
         img = cv2.bitwise_not(img)
+        border_color = 0  # Black
+    else:
+        # Black-on-white image, keep it as is
+        border_color = 0
+    # print(f"Outer layer mean: {outer_layer_mean:.2f}")
+
+    # Add padding to avoid detecting image borders
+    img = cv2.copyMakeBorder(img, 1, 1, 1, 1, cv2.BORDER_CONSTANT, value=border_color)
+
+    # Determine if the image is black-on-white or white-on-black
+    # Calculate the mean color of the outer two layers of pixels
 
     # Binarize the image
     _, binary = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY)

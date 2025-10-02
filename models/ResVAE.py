@@ -102,6 +102,14 @@ class ResVAE(BaseVAE):
         self.decoder = ResVAEDecoder(latent_dim, input_dim, hidden_dim, hidden_layers)
         self.to(device)
 
+    def reconstruct(self, h, eps=1e-7):
+        h = 1 / (torch.exp(h) + eps)
+        h = h / torch.sum(h, dim=1, keepdim=True) * 2 * torch.pi
+        h[h < eps] = eps
+        h = h / torch.sum(h, dim=1, keepdim=True) * 2 * torch.pi
+        h = h.cumsum(dim=1)
+        return h
+
 
 if __name__ == "__main__":
     from torchsummary import summary
