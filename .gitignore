@@ -1,10 +1,5 @@
-images
-Dataset
-GAN
-# hbs
 *.pth
 *.mat
-!preprocessed.theta.mat
 hbs.zip
 .DS_Store
 *.pyc
@@ -12,5 +7,7 @@ hbs.zip
 .ipynb_checkpoints
 data/MNIST
 test*.py
-data/img
+
+data
 runs
+checkpoints
